@@ -11,7 +11,7 @@ WORKDIR /app
 
 # Create a non-root system user for security best practices
 RUN groupadd -r devops && useradd -r -g devops appuser
-COPY --from=builder /build/target/enterprise-java-app-1.0.0.jar app.jar
+COPY --from=builder /build/target/*.jar app.jar
 RUN chown -R appuser:devops /app
 
 USER appuser
