@@ -1,5 +1,8 @@
 name: Enterprise CI Pipeline
 
+env:
+  ENVIRONMENT: development
+
 on:
   push:
     branches: [ "main" ]
@@ -20,6 +23,9 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
         cache: maven
+
+    - name: Show Environment
+      run: echo "Deploying to $ENVIRONMENT"
 
     - name: Build with Maven
       run: mvn clean package -DskipTests
