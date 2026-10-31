@@ -1,0 +1,4 @@
+com/devops/demo/DemoApplication.class
+com/devops/demo/TaskRepository.class
+com/devops/demo/Task.class
+com/devops/demo/HelloController.class
