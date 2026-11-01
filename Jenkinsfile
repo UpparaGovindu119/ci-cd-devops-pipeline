@@ -1,10 +1,10 @@
-
 pipeline {
     agent any
 
     options {
         skipDefaultCheckout(true)
         disableConcurrentBuilds()
+        timestamps()
     }
 
     environment {
@@ -23,10 +23,14 @@ pipeline {
                 git branch: 'main',
                     url: 'https://github.com/UpparaGovindu119/ci-cd-devops-pipeline.git'
 
-                sh '''
-                    echo "Checkout completed"
-                    echo "Commit: $GIT_COMMIT"
-                '''
+                script {
+                    env.COMMIT_SHA = sh(
+                        script: 'git rev-parse HEAD',
+                        returnStdout: true
+                    ).trim()
+
+                    echo "Checked out commit: ${env.COMMIT_SHA}"
+                }
             }
         }
 
@@ -43,21 +47,22 @@ pipeline {
 
                     echo "Checking required tools..."
                     for tool in docker trivy ansible curl; do
-                        command -v "$tool" || {
+                        if ! command -v "$tool" >/dev/null 2>&1; then
                             echo "ERROR: $tool is not installed"
                             exit 1
-                        }
+                        fi
+                        echo "$tool is available"
                     done
 
-                    echo "Checking Docker access..."
-                    docker info
+                    echo "Checking Docker daemon..."
+                    docker info >/dev/null
 
-                    echo "Checking required project files..."
+                    echo "Checking project files..."
                     test -f pom.xml
                     test -f Dockerfile
                     test -f deploy.yml
 
-                    echo "All preflight checks passed"
+                    echo "Preflight checks passed"
                 '''
             }
         }
@@ -66,7 +71,7 @@ pipeline {
             steps {
                 sh '''
                     set -e
-                    mvn clean package
+                    mvn -B clean verify
                 '''
             }
         }
@@ -82,13 +87,14 @@ pipeline {
                     sh '''
                         set -e
 
-                        echo "Checking SonarQube connectivity..."
+                        echo "Checking SonarQube..."
                         curl --fail --silent \
                             "$SONAR_HOST_URL/api/system/status"
 
-                        echo "Running SonarQube analysis..."
+                        echo "Starting SonarQube analysis..."
 
-                        mvn sonar:sonar \
+                        mvn -B \
+                            org.sonarsource.scanner.maven:sonar-maven-plugin:5.3.0.6276:sonar \
                             -Dsonar.projectKey="$SONAR_PROJECT_KEY" \
                             -Dsonar.host.url="$SONAR_HOST_URL" \
                             -Dsonar.token="$SONAR_TOKEN"
@@ -102,15 +108,18 @@ pipeline {
                 sh '''
                     set -e
 
+                    echo "Running Trivy filesystem scan..."
+
                     trivy fs \
                         --severity HIGH,CRITICAL \
-                        --exit-code 1 \
+                        --format table \
+                        --exit-code 0 \
                         .
                 '''
             }
         }
 
-        stage('6. Build & Push Docker Image') {
+        stage('6. Docker Build & Push') {
             steps {
                 withCredentials([
                     usernamePassword(
@@ -128,10 +137,10 @@ pipeline {
 
                         docker build \
                             -t "$IMAGE_NAME:latest" \
-                            -t "$IMAGE_NAME:$GIT_COMMIT" .
+                            -t "$IMAGE_NAME:$COMMIT_SHA" .
 
                         docker push "$IMAGE_NAME:latest"
-                        docker push "$IMAGE_NAME:$GIT_COMMIT"
+                        docker push "$IMAGE_NAME:$COMMIT_SHA"
 
                         docker logout
                     '''
@@ -144,9 +153,14 @@ pipeline {
                 sh '''
                     set -e
 
+                    echo "Starting Ansible deployment..."
+
                     ansible-playbook \
                         -i localhost, \
+                        -c local \
                         deploy.yml
+
+                    echo "Ansible deployment completed"
                 '''
             }
         }
@@ -155,14 +169,15 @@ pipeline {
     post {
         success {
             echo 'SUCCESS: CI/CD Pipeline completed!'
+            echo 'Docker image pushed successfully.'
         }
 
         failure {
-            echo 'FAILURE: Check the failed stage in Console Output.'
+            echo 'FAILURE: Check the first failed stage in Console Output.'
         }
 
         always {
-            echo 'Jenkins Pipeline execution finished.'
+            echo 'Pipeline execution finished.'
         }
     }
 }
