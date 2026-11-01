@@ -5,12 +5,12 @@ pipeline {
     environment {
         JAVA_HOME = '/usr/lib/jvm/java-17-openjdk-amd64'
         PATH = "/usr/lib/jvm/java-17-openjdk-amd64/bin:${env.PATH}"
-
-        SONAR_TOKEN = credentials('sonar-token-id')
         IMAGE_NAME = 'upparagovindu/ci-cd-devops-pipeline'
+        SONAR_HOST_URL = 'http://localhost:9000'
     }
 
     stages {
+
         stage('1. Checkout Code') {
             steps {
                 git branch: 'main',
@@ -18,63 +18,71 @@ pipeline {
             }
         }
 
-        stage('2. Java & Maven Verification') {
+        stage('2. Build & Unit Tests') {
             steps {
                 sh '''
-                    echo "===== JAVA VERSION ====="
                     java -version
-
-                    echo "===== JAVA HOME ====="
-                    echo "$JAVA_HOME"
-
-                    echo "===== MAVEN VERSION ====="
                     mvn -version
+                    mvn clean package
                 '''
             }
         }
 
-        stage('3. Build & Unit Tests') {
+        stage('3. SonarQube Analysis') {
             steps {
-                sh 'mvn clean package'
-            }
-        }
-
-        stage('4. SonarQube Analysis') {
-            steps {
-                withSonarQubeEnv('SonarQubeServer') {
+                withCredentials([
+                    string(
+                        credentialsId: 'sonar-token-id',
+                        variable: 'SONAR_TOKEN'
+                    )
+                ]) {
                     sh '''
                         mvn sonar:sonar \
                         -Dsonar.projectKey=ci-cd-devops-pipeline \
+                        -Dsonar.host.url="$SONAR_HOST_URL" \
                         -Dsonar.token="$SONAR_TOKEN"
                     '''
                 }
             }
         }
 
-        stage('5. Trivy Security Scan') {
+        stage('4. Trivy Security Scan') {
             steps {
-                sh 'trivy fs --severity HIGH,CRITICAL .'
+                sh '''
+                    trivy fs \
+                    --severity HIGH,CRITICAL \
+                    --exit-code 1 .
+                '''
             }
         }
 
-        stage('6. Build & Push Docker Image') {
+        stage('5. Build & Push Docker Image') {
             steps {
-                script {
-                    docker.withRegistry(
-                        'https://index.docker.io/v1/',
-                        'dockerhub-secret-id'
-                    ) {
-                        def customImage =
-                            docker.build("${IMAGE_NAME}:latest")
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'dockerhub-secret-id',
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_PASSWORD'
+                    )
+                ]) {
+                    sh '''
+                        echo "$DOCKER_PASSWORD" | docker login \
+                        -u "$DOCKER_USER" --password-stdin
 
-                        customImage.push('latest')
-                        customImage.push(env.GIT_COMMIT)
-                    }
+                        docker build \
+                        -t "$IMAGE_NAME:latest" \
+                        -t "$IMAGE_NAME:$GIT_COMMIT" .
+
+                        docker push "$IMAGE_NAME:latest"
+                        docker push "$IMAGE_NAME:$GIT_COMMIT"
+
+                        docker logout
+                    '''
                 }
             }
         }
 
-        stage('7. Deploy via Ansible') {
+        stage('6. Deploy via Ansible') {
             steps {
                 sh 'ansible-playbook -i localhost, deploy.yml'
             }
@@ -85,11 +93,9 @@ pipeline {
         always {
             cleanWs()
         }
-
         success {
             echo 'Jenkins Pipeline Executed Successfully!'
         }
-
         failure {
             echo 'Jenkins Pipeline Failed! Check Console Output.'
         }
