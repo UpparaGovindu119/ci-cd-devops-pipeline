@@ -1,3 +1,4 @@
+
 pipeline {
     agent any
 
@@ -79,9 +80,10 @@ pipeline {
         stage('4. SonarQube Analysis') {
             steps {
                 withCredentials([
-                    string(
+                    usernamePassword(
                         credentialsId: 'sonar-token-id',
-                        variable: 'SONAR_TOKEN'
+                        usernameVariable: 'SONAR_USERNAME',
+                        passwordVariable: 'SONAR_TOKEN'
                     )
                 ]) {
                     sh '''
