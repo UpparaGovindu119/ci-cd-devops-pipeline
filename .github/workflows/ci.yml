@@ -84,3 +84,28 @@ jobs:
           tags: |
             upparagovindu/ci-cd-devops-pipeline:latest
             upparagovindu/ci-cd-devops-pipeline:${{ github.sha }}
+
+      # 10. Deploy Application to AWS EC2 via SSH
+      - name: Deploy to AWS EC2
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            echo "Pulling latest Docker image..."
+            docker pull upparagovindu/ci-cd-devops-pipeline:latest
+
+            echo "Stopping existing container if running..."
+            docker stop spring-app || true
+            docker rm spring-app || true
+
+            echo "Running new Spring Boot container on port 8080..."
+            docker run -d \
+              --name spring-app \
+              --network app-net \
+              -p 8080:8080 \
+              -e SPRING_DATA_MONGODB_URI="mongodb://mongodb:27017/devopsdb" \
+              upparagovindu/ci-cd-devops-pipeline:latest
+
+            echo "Deployment completed successfully!"
