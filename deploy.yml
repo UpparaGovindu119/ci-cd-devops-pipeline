@@ -1,60 +1,57 @@
+
 ---
-- name: Deploy Spring Boot & MongoDB Application on Ubuntu Server
+- name: Deploy Spring Boot and MongoDB Application
   hosts: localhost
   connection: local
-  become: yes
+  become: false
+
   vars:
     docker_image: "upparagovindu/ci-cd-devops-pipeline:latest"
     container_name: "spring-app"
+    mongo_container: "mongodb"
     network_name: "devops-net"
 
   tasks:
-    - name: Ensure Docker service is started
-      systemd:
-        name: docker
-        state: started
-        enabled: yes
 
-    - name: Create Docker bridge network if not exists
-      docker_network:
+    - name: Verify Docker daemon is accessible
+      command: docker info
+      changed_when: false
+
+    - name: Create Docker bridge network
+      community.docker.docker_network:
         name: "{{ network_name }}"
         state: present
 
+    - name: Pull latest MongoDB image
+      community.docker.docker_image:
+        name: "mongo:latest"
+        source: pull
+
     - name: Run MongoDB container
-      docker_container:
-        name: "mongodb"
+      community.docker.docker_container:
+        name: "{{ mongo_container }}"
         image: "mongo:latest"
         state: started
         restart_policy: always
         networks:
           - name: "{{ network_name }}"
-        ports:
-          - "27017:27017"
 
     - name: Pull latest Spring Boot application image
-      docker_image:
+      community.docker.docker_image:
         name: "{{ docker_image }}"
         source: pull
-        force_source: yes
+        force_source: true
 
-    - name: Stop existing Spring application container
-      docker_container:
-        name: "{{ container_name }}"
-        state: absent
-      ignore_errors: yes
-
-    - name: Run new Spring Boot application container
-      docker_container:
+    - name: Run Spring Boot application container
+      community.docker.docker_container:
         name: "{{ container_name }}"
         image: "{{ docker_image }}"
         state: started
+        recreate: true
         restart_policy: always
         networks:
           - name: "{{ network_name }}"
         env:
-          MONGO_HOST: "mongodb"
-          MONGO_PORT: "27017"
-          MONGO_DB: "devopsdb"
+          SPRING_DATA_MONGODB_URI: "mongodb://mongodb:27017/devopsdb"
         ports:
           - "8080:8080"
-
