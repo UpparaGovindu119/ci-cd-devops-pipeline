@@ -47,11 +47,13 @@ pipeline {
                     mvn -version
 
                     echo "Checking required tools..."
+
                     for tool in docker trivy ansible curl; do
                         if ! command -v "$tool" >/dev/null 2>&1; then
                             echo "ERROR: $tool is not installed"
                             exit 1
                         fi
+
                         echo "$tool is available"
                     done
 
@@ -72,6 +74,7 @@ pipeline {
             steps {
                 sh '''
                     set -e
+
                     mvn -B clean verify
                 '''
             }
@@ -90,6 +93,7 @@ pipeline {
                         set -e
 
                         echo "Checking SonarQube..."
+
                         curl --fail --silent \
                             "$SONAR_HOST_URL/api/system/status"
 
@@ -142,6 +146,7 @@ pipeline {
                             -t "$IMAGE_NAME:$COMMIT_SHA" .
 
                         docker push "$IMAGE_NAME:latest"
+
                         docker push "$IMAGE_NAME:$COMMIT_SHA"
 
                         docker logout
@@ -169,9 +174,11 @@ pipeline {
     }
 
     post {
+
         success {
             echo 'SUCCESS: CI/CD Pipeline completed!'
             echo 'Docker image pushed successfully.'
+            echo 'Ansible deployment completed.'
         }
 
         failure {
